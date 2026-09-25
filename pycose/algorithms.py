@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Optional, TypeVar
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa, utils
 from cryptography.hazmat.primitives.asymmetric.ec import ECDH
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey, Ed448PublicKey
@@ -37,6 +37,7 @@ class CoseAlgorithm(_CoseAttribute, ABC):
     """ Base class for all COSE algorithms. """
 
     _registered_algorithms = {}
+    supports_streaming_prehash = False
 
     @classmethod
     def get_registered_classes(cls):
@@ -86,10 +87,15 @@ class _Rsa(CoseAlgorithm, ABC):
         raise NotImplementedError()
 
     @classmethod
-    def sign(cls, key: 'RSA', data: bytes) -> bytes:
-        hash_cls = cls.get_hash_func()
-        pad = cls.get_pad_func(hash_cls)
+    def _get_crypto_hash(cls):
+        return cls.get_hash_func()()
 
+    @classmethod
+    def get_hash_name(cls) -> str:
+        return cls._get_crypto_hash().name
+
+    @classmethod
+    def _load_private_key(cls, key: 'RSA'):
         public_nums = rsa.RSAPublicNumbers(e=int.from_bytes(key.e, 'big'), n=int.from_bytes(key.n, 'big'))
         private_nums = rsa.RSAPrivateNumbers(p=int.from_bytes(key.p, 'big'),
                                              q=int.from_bytes(key.q, 'big'),
@@ -99,20 +105,44 @@ class _Rsa(CoseAlgorithm, ABC):
                                              iqmp=int.from_bytes(key.qinv, 'big'),
                                              public_numbers=public_nums)
 
-        sk = private_nums.private_key(backend=default_backend())
+        return private_nums.private_key(backend=default_backend())
 
-        return sk.sign(data, pad, hash_cls())
+    @classmethod
+    def _load_public_key(cls, key: 'RSA'):
+        public_nums = rsa.RSAPublicNumbers(e=int.from_bytes(key.e, 'big'), n=int.from_bytes(key.n, 'big'))
+        return public_nums.public_key(backend=default_backend())
+
+    @classmethod
+    def sign(cls, key: 'RSA', data: bytes) -> bytes:
+        hash_cls = cls.get_hash_func()
+        pad = cls.get_pad_func(hash_cls)
+
+        return cls._load_private_key(key).sign(data, pad, hash_cls())
+
+    @classmethod
+    def sign_digest(cls, key: 'RSA', digest: bytes) -> bytes:
+        hash_alg = cls._get_crypto_hash()
+        pad = cls.get_pad_func(hash_alg.__class__)
+        return cls._load_private_key(key).sign(digest, pad, utils.Prehashed(hash_alg))
 
     @classmethod
     def verify(cls, key: 'RSA', data: bytes, signature: bytes) -> bool:
         hash_cls = cls.get_hash_func()
         pad = cls.get_pad_func(hash_cls)
 
-        public_nums = rsa.RSAPublicNumbers(e=int.from_bytes(key.e, 'big'), n=int.from_bytes(key.n, 'big'))
-        pk = public_nums.public_key(backend=default_backend())
+        try:
+            cls._load_public_key(key).verify(signature, data, pad, hash_cls())
+            return True
+        except InvalidSignature:
+            return False
+
+    @classmethod
+    def verify_digest(cls, key: 'RSA', digest: bytes, signature: bytes) -> bool:
+        hash_alg = cls._get_crypto_hash()
+        pad = cls.get_pad_func(hash_alg.__class__)
 
         try:
-            pk.verify(signature, data, pad, hash_cls())
+            cls._load_public_key(key).verify(signature, digest, pad, utils.Prehashed(hash_alg))
             return True
         except InvalidSignature:
             return False
@@ -120,6 +150,8 @@ class _Rsa(CoseAlgorithm, ABC):
 
 class _RsaPss(_Rsa, ABC):
     """ RSA with PSS padding. """
+
+    supports_streaming_prehash = True
 
     @classmethod
     def get_pad_func(cls, hash_cls):
@@ -180,10 +212,43 @@ class _Ecdsa(CoseAlgorithm, ABC):
         raise NotImplementedError()
 
     @classmethod
+    def get_hash_name(cls) -> str:
+        return cls.get_hash_func()().name
+
+    @classmethod
+    def _crypto_hash(cls):
+        return {
+            'sha256': SHA256,
+            'sha384': SHA384,
+            'sha512': SHA512,
+        }[cls.get_hash_name()]()
+
+    @classmethod
+    def _load_private_key(cls, key: 'EC2'):
+        return ec.derive_private_key(int(hexlify(key.d), 16), key.crv.curve_obj, default_backend())
+
+    @classmethod
+    def _load_public_key(cls, key: 'EC2'):
+        return ec.EllipticCurvePublicNumbers(
+            x=int(hexlify(key.x), 16),
+            y=int(hexlify(key.y), 16),
+            curve=key.crv.curve_obj
+        ).public_key(backend=default_backend())
+
+    @classmethod
     def sign(cls, key: 'EC2', data: bytes) -> bytes:
         sk = SigningKey.from_secret_exponent(int(hexlify(key.d), 16), curve=cls.get_curve())
 
         return sk.sign_deterministic(data, hashfunc=cls.get_hash_func())
+
+    @classmethod
+    def sign_digest(cls, key: 'EC2', digest: bytes) -> bytes:
+        der_signature = cls._load_private_key(key).sign(
+            digest,
+            ec.ECDSA(utils.Prehashed(cls._crypto_hash()))
+        )
+        r_value, s_value = utils.decode_dss_signature(der_signature)
+        return r_value.to_bytes(key.crv.size, 'big') + s_value.to_bytes(key.crv.size, 'big')
 
     @classmethod
     def verify(cls, key: 'EC2', data: bytes, signature: bytes) -> bool:
@@ -195,6 +260,29 @@ class _Ecdsa(CoseAlgorithm, ABC):
             return vk.verify(signature=signature, data=data, hashfunc=cls.get_hash_func())
         except BadSignatureError:
             return False
+
+    @classmethod
+    def verify_digest(cls, key: 'EC2', digest: bytes, signature: bytes) -> bool:
+        if len(signature) != 2 * key.crv.size:
+            return False
+
+        r_value = int.from_bytes(signature[:key.crv.size], 'big')
+        s_value = int.from_bytes(signature[key.crv.size:], 'big')
+        der_signature = utils.encode_dss_signature(r_value, s_value)
+
+        try:
+            cls._load_public_key(key).verify(
+                der_signature,
+                digest,
+                ec.ECDSA(utils.Prehashed(cls._crypto_hash()))
+            )
+            return True
+        except InvalidSignature:
+            return False
+
+
+class _StreamingPrehashEcdsa(_Ecdsa, ABC):
+    supports_streaming_prehash = True
 
 
 class _AesMac(CoseAlgorithm, ABC):
@@ -530,7 +618,7 @@ class Ps256(_RsaPss):
 
 
 @CoseAlgorithm.register_attribute()
-class Es512(_Ecdsa):
+class Es512(_StreamingPrehashEcdsa):
     """
     ECDSA w/ SHA-512
 
@@ -556,7 +644,7 @@ class Es512(_Ecdsa):
 
 
 @CoseAlgorithm.register_attribute()
-class Es384(_Ecdsa):
+class Es384(_StreamingPrehashEcdsa):
     """
     ECDSA w/ SHA-384
 
@@ -1043,7 +1131,7 @@ class EdDSA(CoseAlgorithm):
 
 
 @CoseAlgorithm.register_attribute()
-class Es256(_Ecdsa):
+class Es256(_StreamingPrehashEcdsa):
     """
     ECDSA w/ SHA-256
 
