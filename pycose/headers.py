@@ -67,6 +67,18 @@ class CounterSignature0(CoseHeaderAttribute):
 
 
 @CoseHeaderAttribute.register_attribute()
+class CounterSignatureV2(CoseHeaderAttribute):
+    identifier = 11
+    fullname = "COUNTER_SIGN_V2"
+
+
+@CoseHeaderAttribute.register_attribute()
+class CounterSignature0V2(CoseHeaderAttribute):
+    identifier = 12
+    fullname = "COUNTER_SIGN0_V2"
+
+
+@CoseHeaderAttribute.register_attribute()
 class KIDContext(CoseHeaderAttribute):
     identifier = 10
     fullname = "KID_CONTEXT"
@@ -197,6 +209,7 @@ KID.value_parser = is_bstr
 IV.value_parser = is_bstr
 PartialIV.value_parser = is_bstr
 CounterSignature0.value_parser = is_bstr
+CounterSignature0V2.value_parser = is_bstr
 KIDContext.value_parser = is_bstr
 
 if __name__ == '__main__':

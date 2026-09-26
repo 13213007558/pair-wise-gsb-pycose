@@ -1,9 +1,10 @@
 import abc
-from typing import Optional, TypeVar, Type, TYPE_CHECKING
+from typing import Optional, TypeVar, Type, List, TYPE_CHECKING
 
 import cbor2
 
-from pycose.exceptions import CoseInvalidKey
+from pycose import headers
+from pycose.exceptions import CoseInvalidKey, CoseException, CoseMalformedMessage
 from pycose.keys import CoseKey
 from pycose.keys.ec2 import EC2Key
 from pycose.keys.okp import OKPKey
@@ -12,6 +13,9 @@ from pycose.keys.symmetric import SymmetricKey
 from pycose.messages.cosebase import CoseBase
 
 CBOR = bytes
+
+if TYPE_CHECKING:
+    from pycose.messages.countersignature import CounterSignature0V2Message, CounterSignatureV2Message
 
 
 class CoseMessage(CoseBase, metaclass=abc.ABCMeta):
@@ -145,6 +149,138 @@ class CoseMessage(CoseBase, metaclass=abc.ABCMeta):
             message = cbor2.dumps(message, default=self._custom_cbor_encoder)
 
         return message
+
+    @property
+    def countersignatures(self) -> List['CounterSignatureV2Message']:
+        return self._get_countersignatures()
+
+    @property
+    def counter_signatures_v2(self) -> List['CounterSignatureV2Message']:
+        return self.countersignatures
+
+    def _get_countersignatures(self, allow_unknown_attributes: bool = True) -> List['CounterSignatureV2Message']:
+        from pycose.messages.countersignature import CounterSignatureV2Message as CountersignatureV2
+
+        raw = self._uhdr.get(headers.CounterSignatureV2)
+        if raw is None:
+            return []
+
+        if not isinstance(raw, list) or not raw:
+            raise CoseMalformedMessage("CounterSignatureV2 must be a non-empty array")
+
+        entries = raw
+        countersignatures = []
+        for entry in entries:
+            self._validate_countersignature_entry(entry)
+            cs = CountersignatureV2.from_cose_obj(list(entry), allow_unknown_attributes)
+            cs._parent = self
+            countersignatures.append(cs)
+
+        return countersignatures
+
+    @property
+    def counter_signature0_v2(self) -> Optional['CounterSignature0V2Message']:
+        return self._get_counter_signature0_v2()
+
+    @property
+    def countersignature0_v2(self) -> Optional['CounterSignature0V2Message']:
+        return self.counter_signature0_v2
+
+    def _get_counter_signature0_v2(self,
+                                   allow_unknown_attributes: bool = True) -> Optional['CounterSignature0V2Message']:
+        from pycose.messages.countersignature import CounterSignature0V2Message
+
+        raw = self._uhdr.get(headers.CounterSignature0V2)
+        if raw is None:
+            return None
+
+        if not isinstance(raw, bytes):
+            raise CoseMalformedMessage("CounterSignature0V2 must be a bstr-wrapped COSE_Sign1 structure")
+
+        encoded_message = cbor2.loads(raw)
+        self._validate_countersignature0_entry(encoded_message)
+        cs0 = CounterSignature0V2Message.from_cose_obj(list(encoded_message), allow_unknown_attributes)
+        cs0._parent = self
+        return cs0
+
+    def countersign(self,
+                    key: 'CoseKey',
+                    protected: Optional[dict] = None,
+                    unprotected: Optional[dict] = None,
+                    detached_payload: Optional[bytes] = None) -> 'CounterSignatureV2Message':
+        from pycose.messages.countersignature import CounterSignatureV2Message as CountersignatureV2
+
+        cs = CountersignatureV2(phdr=protected, uhdr=unprotected, key=key)
+        cs._parent = self
+        cs.signature = cs.compute_signature(detached_payload)
+
+        existing = self._uhdr.get(headers.CounterSignatureV2)
+        encoded = cs.encode()
+        if existing is None:
+            self._uhdr[headers.CounterSignatureV2] = [encoded]
+        elif isinstance(existing, list) and existing:
+            existing.append(encoded)
+        else:
+            raise CoseMalformedMessage("CounterSignatureV2 must be a non-empty array")
+
+        return cs
+
+    def countersign0(self,
+                     key: 'CoseKey',
+                     protected: Optional[dict] = None,
+                     unprotected: Optional[dict] = None,
+                     detached_payload: Optional[bytes] = None) -> 'CounterSignature0V2Message':
+        from pycose.messages.countersignature import CounterSignature0V2Message
+
+        cs0 = CounterSignature0V2Message(phdr=protected, uhdr=unprotected, key=key)
+        cs0._parent = self
+        cs0.signature = cs0.compute_signature(detached_payload)
+
+        self._uhdr[headers.CounterSignature0V2] = cs0.encode()
+        return cs0
+
+    def verify_countersignatures(self,
+                                 key: Optional['CoseKey'] = None,
+                                 detached_payload: Optional[bytes] = None,
+                                 allow_unknown_attributes: bool = True) -> bool:
+        found = False
+        valid = True
+
+        for cs in self._get_countersignatures(allow_unknown_attributes):
+            found = True
+            if key is not None:
+                cs.key = key
+            try:
+                valid = cs.verify_signature(detached_payload) and valid
+            except Exception:
+                valid = False
+
+        cs0 = self._get_counter_signature0_v2(allow_unknown_attributes)
+        if cs0 is not None:
+            found = True
+            if key is not None:
+                cs0.key = key
+            try:
+                valid = cs0.verify_signature(detached_payload) and valid
+            except Exception:
+                valid = False
+
+        return found and valid
+
+    @staticmethod
+    def _validate_countersignature_entry(entry) -> None:
+        if not isinstance(entry, list) or len(entry) != 3:
+            raise CoseMalformedMessage("CounterSignatureV2 entries must contain protected, unprotected, and signature")
+        if not isinstance(entry[0], bytes) or not isinstance(entry[1], dict) or not isinstance(entry[2], bytes):
+            raise CoseMalformedMessage("Malformed CounterSignatureV2 entry")
+
+    @staticmethod
+    def _validate_countersignature0_entry(entry) -> None:
+        if not isinstance(entry, list) or len(entry) != 4:
+            raise CoseMalformedMessage("CounterSignature0V2 must wrap a COSE_Sign1 structure")
+        if not isinstance(entry[0], bytes) or not isinstance(entry[1], dict) or entry[2] != b'' \
+                or not isinstance(entry[3], bytes):
+            raise CoseMalformedMessage("Malformed CounterSignature0V2 structure")
 
     def _base_structure(self, structure: list) -> list:
         if len(self.phdr) == 0:

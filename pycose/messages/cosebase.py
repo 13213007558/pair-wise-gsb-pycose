@@ -149,6 +149,10 @@ class CoseBase(metaclass=abc.ABCMeta):
         return self._uhdr
 
     def _custom_cbor_encoder(self, encoder, cose_attribute: Type['CoseHeaderAttribute']):
+        if isinstance(cose_attribute, CoseBase):
+            encoder.encode(cose_attribute.encode())
+            return
+
         if isinstance(cose_attribute, CoseKey):
             new_dict = dict(cose_attribute)
             if KpKeyOps in new_dict and not len(new_dict[KpKeyOps]):
