@@ -1,8 +1,9 @@
 import abc
-from typing import Optional, TypeVar, Type, TYPE_CHECKING
+from typing import List, Optional, TypeVar, Type, TYPE_CHECKING
 
 import cbor2
 
+from pycose import headers
 from pycose.exceptions import CoseInvalidKey
 from pycose.keys import CoseKey
 from pycose.keys.ec2 import EC2Key
@@ -10,6 +11,9 @@ from pycose.keys.okp import OKPKey
 from pycose.keys.rsa import RSAKey
 from pycose.keys.symmetric import SymmetricKey
 from pycose.messages.cosebase import CoseBase
+
+if TYPE_CHECKING:
+    from pycose.messages.countersignature import Countersignature, Countersignature0
 
 CBOR = bytes
 
@@ -145,6 +149,147 @@ class CoseMessage(CoseBase, metaclass=abc.ABCMeta):
             message = cbor2.dumps(message, default=self._custom_cbor_encoder)
 
         return message
+
+    @property
+    def countersignatures(self) -> List['Countersignature']:
+        """
+        Parse the RFC 9338 CounterSignatureV2 header parameter into a list of
+        Countersignature objects bound to this message.
+
+        The deprecated RFC 8152 countersignature header parameters (CounterSignature and
+        CounterSignature0) are not interpreted as version 2 countersignatures.
+
+        :returns: A list of Countersignature objects (empty when the header parameter is absent).
+        """
+
+        from pycose.messages.countersignature import Countersignature
+
+        raw = self._uhdr.get(headers.CounterSignatureV2)
+        if raw is None:
+            return []
+
+        # be lenient and also accept a single (non-array wrapped) COSE_Countersignature structure
+        if isinstance(raw, list) and len(raw) == 3 and isinstance(raw[0], bytes):
+            raw = [raw]
+
+        parsed = []
+        for entry in raw:
+            cs = Countersignature.from_cose_obj(list(entry), allow_unknown_attributes=True)
+            cs._parent = self
+            parsed.append(cs)
+
+        return parsed
+
+    @property
+    def countersignature0(self) -> Optional['Countersignature0']:
+        """
+        Parse the RFC 9338 CounterSignature0V2 header parameter into a Countersignature0
+        object bound to this message.
+
+        :returns: A Countersignature0 object or None when the header parameter is absent.
+        """
+
+        from pycose.messages.countersignature import Countersignature0
+
+        signature = self._uhdr.get(headers.CounterSignature0V2)
+        if signature is None:
+            return None
+
+        cs0 = Countersignature0(signature=signature)
+        cs0._parent = self
+        return cs0
+
+    def countersign(self,
+                    key: CoseKey,
+                    protected: Optional[dict] = None,
+                    unprotected: Optional[dict] = None,
+                    detached_payload: Optional[bytes] = None) -> 'Countersignature':
+        """
+        Create an RFC 9338 countersignature over this message and attach it to the unprotected
+        header under the CounterSignatureV2 (11) header parameter.
+
+        :param key: The COSE key used to compute the countersignature.
+        :param protected: Protected header bucket of the countersignature (should carry the algorithm).
+        :param unprotected: Unprotected header bucket of the countersignature.
+        :param detached_payload: Optional detached payload of the countersigned message.
+        :returns: The created Countersignature object.
+        """
+
+        from pycose.messages.countersignature import Countersignature
+
+        cs = Countersignature(phdr=protected, uhdr=unprotected, key=key)
+        cs._parent = self
+        cs.signature = cs.compute_signature(detached_payload)
+
+        encoded = cs.encode()
+        existing = self._uhdr.get(headers.CounterSignatureV2)
+        if existing is None:
+            self._uhdr[headers.CounterSignatureV2] = [encoded]
+        elif isinstance(existing, list) and len(existing) > 0 and isinstance(existing[0], list):
+            existing.append(encoded)
+        else:
+            # a single (non-array wrapped) COSE_Countersignature structure was present
+            self._uhdr[headers.CounterSignatureV2] = [existing, encoded]
+
+        return cs
+
+    def countersign0(self, key: CoseKey, detached_payload: Optional[bytes] = None) -> bytes:
+        """
+        Create an RFC 9338 CounterSignature0V2 signature over this message and attach it to the
+        unprotected header under the CounterSignature0V2 (12) header parameter.
+
+        :param key: The COSE key used to compute the countersignature (must carry an algorithm).
+        :param detached_payload: Optional detached payload of the countersigned message.
+        :returns: The computed signature.
+        """
+
+        from pycose.messages.countersignature import Countersignature0
+
+        cs0 = Countersignature0(key=key)
+        cs0._parent = self
+        signature = cs0.compute_signature(detached_payload)
+
+        self._uhdr[headers.CounterSignature0V2] = signature
+
+        return signature
+
+    def verify_countersignatures(self, key: CoseKey, detached_payload: Optional[bytes] = None) -> bool:
+        """
+        Verify all RFC 9338 countersignatures attached to this message (both CounterSignatureV2 and
+        CounterSignature0V2 header parameters) with the provided key.
+
+        The message is never modified by the verification: countersignatures that fail verification
+        remain attached to the message and the message object stays fully inspectable.
+
+        :param key: The COSE key used to verify the countersignatures.
+        :param detached_payload: Optional detached payload of the countersigned message.
+        :returns: True when at least one countersignature is present and all of them verify,
+            False otherwise.
+        """
+
+        found = False
+        valid = True
+
+        for cs in self.countersignatures:
+            found = True
+            cs.key = key
+            try:
+                ok = cs.verify_signature(detached_payload)
+            except Exception:
+                ok = False
+            valid = valid and ok
+
+        cs0 = self.countersignature0
+        if cs0 is not None:
+            found = True
+            cs0.key = key
+            try:
+                ok = cs0.verify_signature(detached_payload)
+            except Exception:
+                ok = False
+            valid = valid and ok
+
+        return found and valid
 
     def _base_structure(self, structure: list) -> list:
         if len(self.phdr) == 0:

@@ -67,6 +67,18 @@ class CounterSignature0(CoseHeaderAttribute):
 
 
 @CoseHeaderAttribute.register_attribute()
+class CounterSignatureV2(CoseHeaderAttribute):
+    identifier = 11
+    fullname = "COUNTER_SIGN_V2"
+
+
+@CoseHeaderAttribute.register_attribute()
+class CounterSignature0V2(CoseHeaderAttribute):
+    identifier = 12
+    fullname = "COUNTER_SIGN0_V2"
+
+
+@CoseHeaderAttribute.register_attribute()
 class KIDContext(CoseHeaderAttribute):
     identifier = 10
     fullname = "KID_CONTEXT"
@@ -190,6 +202,21 @@ def content_type_is_uint_or_tstr(value: Any):
     return value
 
 
+def countersignatures_is_array(value: Any):
+    if not isinstance(value, list) or len(value) < 1:
+        raise ValueError("COUNTER_SIGN_V2 should be an array with at least one COSE_Countersignature structure")
+
+    # be lenient and also accept a single (non-array wrapped) COSE_Countersignature structure
+    structures = value if isinstance(value[0], list) else [value]
+    for cs in structures:
+        if not isinstance(cs, list) or len(cs) != 3 or not isinstance(cs[0], bytes) \
+                or not isinstance(cs[1], dict) or not isinstance(cs[2], bytes):
+            raise ValueError("Invalid COSE_Countersignature structure: "
+                             "expected [protected: bstr, unprotected: map, signature: bstr]")
+
+    return value
+
+
 # set parser
 Critical.value_parser = crit_is_array
 ContentType.value_parser = content_type_is_uint_or_tstr
@@ -197,6 +224,8 @@ KID.value_parser = is_bstr
 IV.value_parser = is_bstr
 PartialIV.value_parser = is_bstr
 CounterSignature0.value_parser = is_bstr
+CounterSignatureV2.value_parser = countersignatures_is_array
+CounterSignature0V2.value_parser = is_bstr
 KIDContext.value_parser = is_bstr
 
 if __name__ == '__main__':
