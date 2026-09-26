@@ -24,3 +24,13 @@ class CoseInvalidKey(Exception):
 
 class CoseException(Exception):
     pass
+
+
+class CoseNoUsableKey(CoseException):
+    """ Raised when none of the keys in a key set can recover the content encryption key. """
+    pass
+
+
+class CoseContentAuthenticationFailed(CoseException):
+    """ Raised when a decryption path was found but AEAD verification of the content failed. """
+    pass
