@@ -17,3 +17,6 @@ can optionally contain another list of :class:`~pycose.messages.recipient.CoseRe
     :members:
     :inherited-members:
     :exclude-members: from_cose_obj, record_cbor_tag
+
+.. autoclass:: KeySetDecryptionResult
+    :members:

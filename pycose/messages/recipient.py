@@ -261,8 +261,9 @@ class KeyWrap(CoseRecipient):
         if msg.payload == b'':
             raise CoseMalformedMessage(f'Recipient class KEY_WRAP must carry the encrypted CEK in its payload')
 
-        msg.recipients = [CoseRecipient.create_recipient(r, allow_unknown_attributes, context='Rec_Recipient') for r in
-                          msg.recipients]
+        if len(cose_obj):
+            msg.recipients = [CoseRecipient.create_recipient(r, allow_unknown_attributes, context='Rec_Recipient')
+                              for r in cose_obj.pop(0)]
 
         return msg
 
@@ -481,8 +482,9 @@ class KeyAgreementWithKeyWrap(CoseRecipient):
             raise CoseMalformedMessage(
                 f'Recipient class KEY_AGREEMENT_WITH_KEY_WRAP must carry the encrypted CEK in its payload')
 
-        msg.recipients = [CoseRecipient.create_recipient(r, allow_unknown_attributes, context='Rec_Recipient') for r in
-                          msg.recipients]
+        if len(cose_obj):
+            msg.recipients = [CoseRecipient.create_recipient(r, allow_unknown_attributes, context='Rec_Recipient')
+                              for r in cose_obj.pop(0)]
 
         return msg
 
