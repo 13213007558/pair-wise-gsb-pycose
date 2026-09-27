@@ -58,6 +58,10 @@ class MacCommon(cosemessage.CoseMessage, metaclass=abc.ABCMeta):
         self.auth_tag = alg.compute_tag(key=self.key, data=self._mac_structure)
         return self.auth_tag
 
+    def _countersign_other_fields(self) -> list:
+        # RFC 9338, Section 3: a countersignature on a COSE_Mac0/COSE_Mac also covers the tag
+        return [self.auth_tag]
+
     @property
     def _mac_structure(self) -> bytes:
         """ Create the mac_structure that needs to be MAC'ed. """

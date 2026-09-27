@@ -1,15 +1,18 @@
 import abc
 from copy import deepcopy
-from typing import Optional, Any, Dict, Type, Tuple, TypeVar
+from typing import Optional, Any, Dict, List, Type, Tuple, TypeVar, TYPE_CHECKING
 
 import cbor2
 
 from pycose import utils
 from pycose.algorithms import CoseAlgorithm
-from pycose.exceptions import CoseException
-from pycose.headers import CoseHeaderAttribute, Algorithm
+from pycose.exceptions import CoseException, CoseMalformedMessage
+from pycose.headers import CoseHeaderAttribute, Algorithm, CounterSignatureV2, CounterSignature0V2
 from pycose.keys.cosekey import CoseKey
 from pycose.keys.cosekey import KpKeyOps
+
+if TYPE_CHECKING:
+    from pycose.messages.countersignature import CoseCounterSignatureBase
 
 CBOR = bytes
 
@@ -52,11 +55,109 @@ class CoseBase(metaclass=abc.ABCMeta):
         self._phdr_encoded = phdr_encoded
         self._phdr = CoseBase._parse_header(phdr, kwargs.get("allow_unknown_attributes", True))
         self._uhdr = CoseBase._parse_header(uhdr, kwargs.get("allow_unknown_attributes", True))
+        self._decode_countersignatures()
 
         # can be plaintext or ciphertext
         if payload is not None and type(payload) is not bytes:
             raise TypeError("payload should be of type 'bytes'")
         self._payload = payload
+
+    def _decode_countersignatures(self) -> None:
+        """
+        Convert the raw values of the RFC 9338 countersignature header attributes in the
+        unprotected header bucket into countersignature objects bound to this structure.
+
+        The legacy (RFC 8152) COUNTER_SIGN and COUNTER_SIGN0 attributes are left untouched.
+        """
+
+        from pycose.messages.countersignature import CoseCounterSignature, CoseCounterSignature0
+
+        if CounterSignatureV2 in self._uhdr:
+            self._uhdr[CounterSignatureV2] = self._to_countersignature(self._uhdr[CounterSignatureV2],
+                                                                       CoseCounterSignature)
+
+        if CounterSignature0V2 in self._uhdr:
+            self._uhdr[CounterSignature0V2] = self._to_countersignature(self._uhdr[CounterSignature0V2],
+                                                                        CoseCounterSignature0)
+
+    def _to_countersignature(self, value: Any, cs_class: type) -> Any:
+        from pycose.messages.countersignature import CoseCounterSignature, CoseCounterSignature0
+
+        if cs_class is CoseCounterSignature0:
+            if isinstance(value, CoseCounterSignature0):
+                countersignature = value
+            elif isinstance(value, bytes):
+                countersignature = CoseCounterSignature0(signature=value)
+            else:
+                raise CoseMalformedMessage("COUNTER_SIGN0_V2 attribute must carry a byte string")
+        else:
+            if isinstance(value, CoseCounterSignature):
+                countersignature = value
+            elif isinstance(value, list) and len(value) == 3 and isinstance(value[0], bytes):
+                # a single COSE_Countersignature structure
+                countersignature = CoseCounterSignature.from_cose_obj(value, allow_unknown_attributes=True)
+            elif isinstance(value, list):
+                # an array of COSE_Countersignature structures
+                return [self._to_countersignature(v, cs_class) for v in value]
+            else:
+                raise CoseMalformedMessage("COUNTER_SIGN_V2 attribute must carry a COSE_Countersignature "
+                                           "structure or an array of structures")
+
+        countersignature._parent = self
+        return countersignature
+
+    def _encode_countersignatures(self, value: Any) -> Any:
+        from pycose.messages.countersignature import CoseCounterSignatureBase
+
+        if isinstance(value, CoseCounterSignatureBase):
+            if value._parent is None:
+                value._parent = self
+            return value.encode()
+        elif isinstance(value, list):
+            return [self._encode_countersignatures(v) for v in value]
+        else:
+            return value
+
+    @property
+    def countersignatures(self) -> List['CoseCounterSignatureBase']:
+        """
+        All RFC 9338 countersignatures carried in the unprotected header bucket.
+
+        :returns: A list of CoseCounterSignature and/or CoseCounterSignature0 objects.
+        """
+
+        result = []
+
+        value = self._uhdr.get(CounterSignatureV2)
+        if value is not None:
+            result.extend(value if isinstance(value, list) else [value])
+
+        value = self._uhdr.get(CounterSignature0V2)
+        if value is not None:
+            result.append(value)
+
+        return result
+
+    def verify_countersignature(self,
+                                countersignature: 'CoseCounterSignatureBase',
+                                detached_payload: Optional[bytes] = None) -> bool:
+        """
+        Verify an RFC 9338 countersignature attached to this COSE object.
+
+        A failed verification does not modify the object: the countersignature stays in
+        place and the object remains available for further inspection.
+
+        :param countersignature: A countersignature object carried by this COSE object.
+        :param detached_payload: The detached payload of the countersigned structure, if any.
+
+        :raises CoseException: When the countersignature is not attached to this object.
+        :returns: True for a valid countersignature or False for an invalid countersignature.
+        """
+
+        if countersignature not in self.countersignatures:
+            raise CoseException("Countersignature is not attached to this COSE object")
+
+        return countersignature.verify_signature(detached_payload=detached_payload)
 
     def get_attr(self, attribute: Type[CoseHeaderAttribute], default: Any = None) -> Optional[Any]:
         """
@@ -111,6 +212,7 @@ class CoseBase(metaclass=abc.ABCMeta):
         if type(uhdr_params) is not dict:
             raise TypeError("unprotected header should be of type 'dict'")
         self._uhdr.update(uhdr_params)
+        self._decode_countersignatures()
 
     @property
     def local_attrs(self):
@@ -146,7 +248,14 @@ class CoseBase(metaclass=abc.ABCMeta):
         """
 
         # TODO: check if not double header parameters in header buckets
-        return self._uhdr
+        uhdr = {}
+        for k, v in self._uhdr.items():
+            if k is CounterSignatureV2 or k is CounterSignature0V2:
+                uhdr[k] = self._encode_countersignatures(v)
+            else:
+                uhdr[k] = v
+
+        return uhdr
 
     def _custom_cbor_encoder(self, encoder, cose_attribute: Type['CoseHeaderAttribute']):
         if isinstance(cose_attribute, CoseKey):

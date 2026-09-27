@@ -50,6 +50,10 @@ class Sign1Message(SignCommon):
 
         self._signature = value
 
+    def _countersign_other_fields(self) -> list:
+        # RFC 9338, Section 3: a countersignature on a COSE_Sign1 also covers the signature
+        return [self.signature]
+
     def _create_sig_structure(self, detached_payload: Optional[bytes] = None):
         """
         Create the sig_structure that needs to be signed
@@ -74,8 +78,9 @@ class Sign1Message(SignCommon):
         """ Encodes the message into a CBOR array with or without a CBOR tag. """
 
         if sign:
-            message = [self.phdr_encoded, self.uhdr_encoded, self.payload, self.compute_signature(detached_payload)]
-        elif self.signature:
+            self.signature = self.compute_signature(detached_payload)
+
+        if self.signature:
             message = [self.phdr_encoded, self.uhdr_encoded, self.payload, self.signature]
         else:
             message = [self.phdr_encoded, self.uhdr_encoded, self.payload]

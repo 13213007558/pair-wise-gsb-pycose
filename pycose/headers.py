@@ -67,6 +67,18 @@ class CounterSignature0(CoseHeaderAttribute):
 
 
 @CoseHeaderAttribute.register_attribute()
+class CounterSignatureV2(CoseHeaderAttribute):
+    identifier = 11
+    fullname = "COUNTER_SIGN_V2"
+
+
+@CoseHeaderAttribute.register_attribute()
+class CounterSignature0V2(CoseHeaderAttribute):
+    identifier = 12
+    fullname = "COUNTER_SIGN0_V2"
+
+
+@CoseHeaderAttribute.register_attribute()
 class KIDContext(CoseHeaderAttribute):
     identifier = 10
     fullname = "KID_CONTEXT"

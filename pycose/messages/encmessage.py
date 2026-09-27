@@ -62,7 +62,12 @@ class EncMessage(enccommon.EncCommon):
 
         # encode/wrap_cek the base fields
         if encrypt:
-            message = [self.phdr_encoded, self.uhdr_encoded, self.encrypt()]
+            # temporarily replace the payload by the ciphertext so that countersignatures
+            # in the unprotected header are computed over the ciphertext (RFC 9338)
+            plaintext = self.payload
+            self.payload = self.encrypt()
+            message = [self.phdr_encoded, self.uhdr_encoded, self.payload]
+            self.payload = plaintext
         else:
             message = [self.phdr_encoded, self.uhdr_encoded, self.payload]
 

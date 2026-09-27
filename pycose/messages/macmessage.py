@@ -62,7 +62,8 @@ class MacMessage(maccommon.MacCommon):
         """ Encodes and protects the COSE_Mac message. """
 
         if mac:
-            message = [self.phdr_encoded, self.uhdr_encoded, self.payload, self.compute_tag()]
+            self.compute_tag()
+            message = [self.phdr_encoded, self.uhdr_encoded, self.payload, self.auth_tag]
         else:
             message = [self.phdr_encoded, self.uhdr_encoded, self.payload]
 

@@ -10,3 +10,4 @@ COSE Messages
    mac0message.rst
    encmessage.rst
    enc0message.rst
+   countersignature.rst

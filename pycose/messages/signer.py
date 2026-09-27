@@ -49,6 +49,18 @@ class CoseSignature(SignCommon):
 
         self._payload = value
 
+    def _countersign_payload(self) -> Optional[bytes]:
+        # RFC 9338, Section 3: a countersignature on a COSE_Signature covers the payload
+        # of the COSE_Sign message carrying the signer
+        if self._parent is None:
+            raise CoseException("COSE_Signature is not attached to a COSE_Sign message")
+
+        return self._parent.payload
+
+    def _countersign_other_fields(self) -> list:
+        # RFC 9338, Section 3: a countersignature on a COSE_Signature also covers the signature
+        return [self.signature]
+
     def _create_sig_structure(self, detached_payload: Optional[bytes] = None):
         sign_structure = [self._parent.context, self._parent.phdr_encoded]
 
@@ -70,7 +82,9 @@ class CoseSignature(SignCommon):
         return aad
 
     def encode(self, detached_payload: Optional[bytes] = None, *args, **kwargs) -> list:
-        return [self.phdr_encoded, self.uhdr_encoded, self.compute_signature(detached_payload)]
+        self.signature = self.compute_signature(detached_payload)
+
+        return [self.phdr_encoded, self.uhdr_encoded, self.signature]
 
     def __repr__(self) -> str:
         return f'<COSE_Signature: [{self._phdr}, {self._uhdr}, {utils.truncate(self._payload)}]>'

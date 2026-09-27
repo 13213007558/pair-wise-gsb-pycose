@@ -43,7 +43,8 @@ class Mac0Message(maccommon.MacCommon):
         """ Encode and protect the COSE_Mac0 message. """
 
         if mac:
-            message = [self.phdr_encoded, self.uhdr_encoded, self.payload, self.compute_tag()]
+            self.compute_tag()
+            message = [self.phdr_encoded, self.uhdr_encoded, self.payload, self.auth_tag]
         else:
             message = [self.phdr_encoded, self.uhdr_encoded, self.payload]
 

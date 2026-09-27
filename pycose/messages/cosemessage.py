@@ -146,6 +146,21 @@ class CoseMessage(CoseBase, metaclass=abc.ABCMeta):
 
         return message
 
+    def _countersign_payload(self) -> Optional[bytes]:
+        """
+        The payload covered by an RFC 9338 countersignature attached to this structure.
+        """
+
+        return self.payload
+
+    def _countersign_other_fields(self) -> list:
+        """
+        The other_fields of the Countersign_structure (RFC 9338, Section 3) for a
+        countersignature attached to this structure.
+        """
+
+        return []
+
     def _base_structure(self, structure: list) -> list:
         if len(self.phdr) == 0:
             structure.append(b'')
