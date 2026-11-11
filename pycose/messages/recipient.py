@@ -165,7 +165,7 @@ class CoseRecipient(CoseMessage, metaclass=abc.ABCMeta):
         v_other = self.get_attr(headers.PartyVOther)
         v = PartyInfo(v_id, v_nonce, v_other)
 
-        supp_pub = SuppPubInfo(algorithm.get_key_length(), self.phdr, self.local_attrs.get(headers.SuppPubOther, b''))
+        supp_pub = SuppPubInfo(algorithm.get_key_length(), self._phdr, self.local_attrs.get(headers.SuppPubOther, b''))
         supp_priv = self.local_attrs.get(headers.SuppPrivOther, b'')
 
         return CoseKDFContext(algorithm, supp_pub, u, v, supp_priv)
