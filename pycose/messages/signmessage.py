@@ -66,6 +66,12 @@ class _SignMessage(CoseMessage, metaclass=abc.ABCMeta):
     def signers(self, signers: List['Signer']):
         if isinstance(signers, list):
             for s in signers:
+                if not isinstance(s, CoseSignature):
+                    raise CoseException("Signers must be of type CoseSignature")
+                if s._parent is not None and s._parent is not self:
+                    raise CoseException(
+                        "A CoseSignature can only be attached to a single SignMessage; "
+                        "create a new CoseSignature instead of reusing one from another message")
                 s._parent = self
             self._signers = signers
         else:

@@ -50,10 +50,12 @@ class CoseSignature(SignCommon):
         self._payload = value
 
     def _create_sig_structure(self, detached_payload: Optional[bytes] = None):
-        sign_structure = [self._parent.context, self._parent.phdr_encoded]
-
-        if len(self.phdr):
-            sign_structure.append(self.phdr_encoded)
+        if self._parent is None:
+            raise CoseException("CoseSignature must be attached to a SignMessage before it can be signed or verified")
+        # RFC 8152 section 4.4: the Sig_structure always contains five
+        # elements, an empty signer protected header is encoded as a
+        # zero-length bstr and must not be omitted.
+        sign_structure = [self._parent.context, self._parent.phdr_encoded, self.phdr_encoded]
 
         sign_structure.append(self.external_aad)
 

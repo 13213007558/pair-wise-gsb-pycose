@@ -8,6 +8,12 @@ is extended with a list of :class:`~pycose.messages.signer.CoseSignature` struct
 The payload can either be included in the message or remain detached.
 Detached payloads must be provided as `detached_payload` argument during signing and verification.
 
+A :class:`~pycose.messages.signer.CoseSignature` object is bound to the
+:class:`~pycose.messages.signmessage.SignMessage` it is first attached to.
+Attaching the same object to a second message raises a
+:class:`~pycose.exceptions.CoseException`; create a separate
+``CoseSignature`` for each message instead.
+
 .. module:: pycose.messages.signmessage
 
 .. autoclass:: SignMessage
