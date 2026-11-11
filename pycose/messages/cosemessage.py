@@ -3,6 +3,7 @@ from typing import Optional, TypeVar, Type, TYPE_CHECKING
 
 import cbor2
 
+from pycose import utils
 from pycose.exceptions import CoseInvalidKey
 from pycose.keys import CoseKey
 from pycose.keys.ec2 import EC2Key
@@ -52,7 +53,7 @@ class CoseMessage(CoseBase, metaclass=abc.ABCMeta):
         """
 
         try:
-            cbor_msg = cbor2.loads(received)
+            cbor_msg = utils.cbor_loads(received)
             cbor_tag = cbor_msg.tag
             cose_obj = cbor_msg.value
         except AttributeError:

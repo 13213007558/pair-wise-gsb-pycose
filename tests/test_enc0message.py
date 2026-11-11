@@ -1,5 +1,6 @@
 import cbor2
 
+from pycose import utils
 from pycose.messages.enc0message import Enc0Message
 from pycose.keys.cosekey import CoseKey
 from pycose.keys.keyops import EncryptOp, DecryptOp
@@ -25,7 +26,7 @@ def test_encrypt0_encoding(test_encrypt0):
     msg.key = key
 
     assert msg.encrypt() == test_output['ciphertext']
-    assert cbor2.loads(msg.encode()) == test_output['result']
+    assert utils.cbor_loads(msg.encode()) == test_output['result']
 
 
 def test_encrypt0_decoding(test_encrypt0):
@@ -59,7 +60,7 @@ def test_encrypt0_round_trip(test_encrypt0):
         key=key)
 
     assert msg.encrypt() == test_output['ciphertext']
-    assert cbor2.loads(msg.encode()) == test_output['result']
+    assert utils.cbor_loads(msg.encode()) == test_output['result']
 
     msg = msg.encode()
     msg = Enc0Message.decode(msg)

@@ -3,6 +3,8 @@ from binascii import hexlify, unhexlify
 import cbor2
 import pytest
 
+from pycose import utils
+
 from pycose.keys import EC2Key
 from pycose.messages.signmessage import SignMessage
 from pycose.messages.signer import CoseSignature
@@ -32,7 +34,7 @@ def test_sign_encoding(test_sign):
 
     # remove signature for probabilistic behavior
     do_tag = test_sign['cbor_tag']
-    msg_dec = cbor2.loads(msg.encode(tag=do_tag))
+    msg_dec = utils.cbor_loads(msg.encode(tag=do_tag))
     test_dec = test_output['result']
     if 'signature' not in s_output:
         msg = msg_dec.value if do_tag else msg_dec

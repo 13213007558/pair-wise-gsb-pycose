@@ -5,7 +5,7 @@ from os import listdir
 from os.path import join
 from typing import List
 
-import cbor2
+from pycose import utils
 
 from pycose.keys import cosekey
 from pycose.algorithms import CoseAlgorithm
@@ -189,7 +189,7 @@ def type_conv(d: dict) -> dict:
         return d
 
     elif '__output__' in d:
-        d['result'] = cbor2.loads(unhexlify(d['result']))
+        d['result'] = utils.cbor_loads(unhexlify(d['result']))
         d['protected'] = unhexlify(d['protected'])
         d['unprotected'] = {CoseHeaderAttribute.from_id(k): v for k, v in eval(d['unprotected']).items()}
 

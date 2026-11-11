@@ -32,7 +32,7 @@ class CoseBase(metaclass=abc.ABCMeta):
             if phdr_encoded == b"":
                 phdr = {}
             else:
-                phdr = cbor2.loads(phdr_encoded)
+                phdr = utils.cbor_loads(phdr_encoded)
         elif phdr is None:
             phdr = {}
 

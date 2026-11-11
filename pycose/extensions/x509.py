@@ -1,8 +1,8 @@
 from typing import List, Set, Union, Type
 
-import cbor2
 from certvalidator import CertificateValidator
 
+from pycose import utils
 from pycose.algorithms import CoseAlg, CoseAlgorithm
 
 
@@ -22,7 +22,7 @@ class X5T:
     def from_certificate(cls, alg: Type['CoseAlg'], certificate: bytes, cbor_encoded: bool = False):
         """ Extract thumbprint from an encoded certificate. """
         if cbor_encoded:
-            certificate = cbor2.loads(certificate)
+            certificate = utils.cbor_loads(certificate)
 
         return cls(alg=alg, thumbprint=alg.compute_hash(certificate))
 
@@ -50,7 +50,7 @@ class X5T:
             return False
 
         if cbor_encoded:
-            certificate = cbor2.loads(certificate)
+            certificate = utils.cbor_loads(certificate)
 
         return self.thumbprint == self.alg.compute_hash(certificate)
 

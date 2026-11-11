@@ -1,5 +1,5 @@
 cryptography
-cbor2
+cbor2>=5.0,<7.0
 ecdsa
 attrs
 certvalidator

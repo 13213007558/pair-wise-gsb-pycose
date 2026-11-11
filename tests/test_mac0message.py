@@ -1,6 +1,8 @@
 import cbor2
 import pytest
 
+from pycose import utils
+
 from pycose.keys.cosekey import CoseKey
 from pycose.keys.keyops import MacVerifyOp, MacCreateOp
 from pycose.messages.cosemessage import CoseMessage
@@ -27,7 +29,7 @@ def test_mac0_encoding(test_mac0):
     msg.key = key
 
     assert msg.compute_tag() == test_output['tag']
-    assert cbor2.loads(msg.encode(tag=test_mac0['cbor_tag'])) == test_output['result']
+    assert utils.cbor_loads(msg.encode(tag=test_mac0['cbor_tag'])) == test_output['result']
 
 
 def test_encrypt0_decoding(test_mac0):

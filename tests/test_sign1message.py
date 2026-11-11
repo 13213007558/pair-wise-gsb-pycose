@@ -1,6 +1,8 @@
 import cbor2
 import pytest
 
+from pycose import utils
+
 from pycose.exceptions import CoseException, CoseIllegalAlgorithm, CoseIllegalKeyOps
 from pycose.keys import OKPKey, EC2Key
 from pycose.keys.cosekey import CoseKey
@@ -28,7 +30,7 @@ def test_sign1_encoding(test_sign1):
     msg.key = key
 
     assert msg.compute_signature() == test_output['signature']
-    assert cbor2.loads(msg.encode(tag=test_sign1['cbor_tag'])) == test_output['result']
+    assert utils.cbor_loads(msg.encode(tag=test_sign1['cbor_tag'])) == test_output['result']
 
 
 def test_sign1_decoding(test_sign1):

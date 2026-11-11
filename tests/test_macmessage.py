@@ -1,5 +1,6 @@
 import cbor2
 
+from pycose import utils
 from pycose.keys.cosekey import CoseKey
 from pycose.keys.keyops import MacCreateOp, MacVerifyOp
 from pycose.messages.macmessage import MacMessage
@@ -29,7 +30,7 @@ def test_mac_direct_encryption_encoding(test_mac_direct_encryption_files):
 
     assert msg._mac_structure == test_output['structure']
 
-    assert cbor2.loads(msg.encode()) == test_output['result']
+    assert utils.cbor_loads(msg.encode()) == test_output['result']
 
 
 def test_mac_direct_encryption_decoding(test_mac_direct_encryption_files):

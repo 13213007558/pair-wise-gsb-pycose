@@ -36,7 +36,7 @@ class CoseKey(MutableMapping, ABC):
         :return: An initialized COSE key.
         """
 
-        return CoseKey.from_dict(cbor2.loads(received))
+        return CoseKey.from_dict(utils.cbor_loads(received))
 
     @classmethod
     def record_kty(cls, kty: Type['KTYPE']) -> Callable:

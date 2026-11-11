@@ -1,6 +1,6 @@
 import cbor2
 
-from pycose import headers
+from pycose import headers, utils
 from pycose.keys.cosekey import CoseKey
 from pycose.keys.keyops import EncryptOp, DecryptOp
 from pycose.keys.rsa import RSAKey
@@ -27,7 +27,7 @@ def test_encrypt_direct_encryption_encoding(test_encrypt_direct_encryption_files
 
     assert msg._enc_structure == test_output['structure']
 
-    assert cbor2.loads(msg.encode()) == test_output['result']
+    assert utils.cbor_loads(msg.encode()) == test_output['result']
 
 
 def test_encrypt_direct_encryption_decoding(test_encrypt_direct_encryption_files):
@@ -68,7 +68,7 @@ def test_encrypt_direct_key_agreement_encoding(test_encrypt_direct_key_agreement
         assert r.get_kdf_context(msg.get_attr(headers.Algorithm)).encode() == r_output['context']
 
     assert msg.encrypt() == test_output['ciphertext']
-    assert cbor2.loads(msg.encode()) == test_output['result']
+    assert utils.cbor_loads(msg.encode()) == test_output['result']
 
 
 def test_encrypt_direct_key_agreement_decoding(test_encrypt_direct_key_agreement_files):
@@ -117,7 +117,7 @@ def test_encrypt_key_wrap_encoding(test_encrypt_key_wrap_files):
     assert msg.encrypt() == test_output['ciphertext']
     # remove signature for probabilistic behavior
     do_tag = test_encrypt_key_wrap_files.get('cbor_tag', True)
-    msg_dec = cbor2.loads(msg.encode(tag=do_tag))
+    msg_dec = utils.cbor_loads(msg.encode(tag=do_tag))
     test_dec = test_output['result']
     if isinstance(r.key, RSAKey):
         msg = msg_dec.value if do_tag else msg_dec
@@ -175,7 +175,7 @@ def test_encrypt_key_agreement_key_wrap_encoding(test_encrypt_key_agreement_key_
         assert r.encrypt((r.get_attr(headers.Algorithm)).get_key_wrap_func()) == r_output['ciphertext']
 
     assert msg.encrypt() == test_output['ciphertext']
-    assert cbor2.loads(msg.encode()) == test_output['result']
+    assert utils.cbor_loads(msg.encode()) == test_output['result']
 
 
 def test_encrypt_key_agreement_key_wrap_decoding(test_encrypt_key_agreement_key_wrap_files):
