@@ -249,6 +249,11 @@ class DirectEncryption(CoseRecipient):
 class KeyWrap(CoseRecipient):
     @classmethod
     def from_cose_obj(cls, cose_obj: list, allow_unknown_attributes: bool, *args, **kwargs) -> 'KeyWrap':
+        # CoseBase.from_cose_obj pops phdr, uhdr and (for a message) the payload.
+        # A recipient stores the wrapped key plus an optional nested recipient
+        # list, so keep the nested recipients aside before the destructive pops
+        # and construct them directly instead of reading the corrupted residue.
+        nested = cose_obj[3] if len(cose_obj) > 3 else []
         msg = super().from_cose_obj(cose_obj, allow_unknown_attributes)
         msg.context = kwargs.get('context')
 
@@ -261,8 +266,9 @@ class KeyWrap(CoseRecipient):
         if msg.payload == b'':
             raise CoseMalformedMessage(f'Recipient class KEY_WRAP must carry the encrypted CEK in its payload')
 
-        msg.recipients = [CoseRecipient.create_recipient(r, allow_unknown_attributes, context='Rec_Recipient') for r in
-                          msg.recipients]
+        if nested:
+            msg.recipients = [CoseRecipient.create_recipient(r, allow_unknown_attributes, context='Rec_Recipient')
+                              for r in nested]
 
         return msg
 
@@ -284,6 +290,10 @@ class KeyWrap(CoseRecipient):
         return recipient
 
     def _compute_kek(self, target_alg: '_EncAlg', ops: 'str') -> bytes:
+        # The KEK is consumed by THIS recipient's key-wrap algorithm, so the
+        # KDF context of any nested recipient must name that wrap algorithm
+        # and its key length rather than the message-level content algorithm.
+        wrap_alg = self.get_attr(headers.Algorithm)
 
         if self.key is None:
             #  try to derive from this recipients' recipient list
@@ -295,18 +305,20 @@ class KeyWrap(CoseRecipient):
                 if ops == 'encrypt':
 
                     if DirectKeyAgreement in r_types:
-                        self.key = self.recipients[0].compute_cek(target_alg)
+                        self.key = self.recipients[0].compute_cek(wrap_alg, ops)
 
                     elif KeyWrap in r_types or KeyAgreementWithKeyWrap in r_types:
-                        key_bytes = os.urandom(self.get_attr(headers.Algorithm))
+                        key_bytes = os.urandom(wrap_alg.get_key_length())
                         for r in self.recipients:
                             r.payload = key_bytes
                         self.key = SymmetricKey(k=key_bytes)
                     else:
                         raise CoseException('Unsupported COSE recipient class')
                 else:
-                    if DirectKeyAgreement in r_types or KeyWrap in r_types or KeyAgreementWithKeyWrap in r_types:
-                        self.key = self.recipients[0].decrypt(self.get_attr(headers.Algorithm))
+                    if DirectKeyAgreement in r_types:
+                        self.key = self.recipients[0].compute_cek(wrap_alg, ops)
+                    elif KeyWrap in r_types or KeyAgreementWithKeyWrap in r_types:
+                        self.key = SymmetricKey(k=self.recipients[0].decrypt(wrap_alg))
                     else:
                         raise CoseException('Unsupported COSE recipient class')
 
@@ -435,6 +447,17 @@ class DirectKeyAgreement(CoseRecipient):
 
         return kex_alg.derive_kek(peer_key.crv, local_key, peer_key, self.get_kdf_context(target_alg))
 
+    def decrypt(self, target_alg: '_EncAlg') -> bytes:
+        """
+        Derive the KEK/CEK on the receiving side.
+
+        A direct key-agreement recipient carries an empty ciphertext; it is used
+        as a nested recipient of a key-wrap recipient, which expects a ``decrypt``
+        entry point returning the derived key bytes.
+        """
+
+        return self.compute_cek(target_alg, "decrypt").k
+
     def compute_cek(self, target_alg: '_EncAlg', ops: str) -> 'SK':
         alg = self.get_attr(headers.Algorithm)
 
@@ -474,6 +497,8 @@ class KeyAgreementWithKeyWrap(CoseRecipient):
                       *args,
                       **kwargs) -> 'KeyAgreementWithKeyWrap':
 
+        # preserve nested recipients across the destructive payload pop
+        nested = cose_obj[3] if len(cose_obj) > 3 else []
         msg = super().from_cose_obj(cose_obj, allow_unknown_attributes)
         msg.context = kwargs.get('context')
 
@@ -481,8 +506,9 @@ class KeyAgreementWithKeyWrap(CoseRecipient):
             raise CoseMalformedMessage(
                 f'Recipient class KEY_AGREEMENT_WITH_KEY_WRAP must carry the encrypted CEK in its payload')
 
-        msg.recipients = [CoseRecipient.create_recipient(r, allow_unknown_attributes, context='Rec_Recipient') for r in
-                          msg.recipients]
+        if nested:
+            msg.recipients = [CoseRecipient.create_recipient(r, allow_unknown_attributes, context='Rec_Recipient')
+                              for r in nested]
 
         return msg
 

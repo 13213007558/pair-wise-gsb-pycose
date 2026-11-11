@@ -15,6 +15,8 @@ from typing import Optional, List, TYPE_CHECKING
 from pycose import utils, headers
 from pycose.exceptions import CoseException
 from pycose.keys.keyops import MacCreateOp
+from pycose.keys.keyparam import KpAlg, KpKeyOps
+from pycose.keys.symmetric import SymmetricKey
 from pycose.messages import cosemessage, maccommon
 from pycose.messages.recipient import CoseRecipient, DirectEncryption, DirectKeyAgreement, KeyWrap, \
     KeyAgreementWithKeyWrap
@@ -94,7 +96,7 @@ class MacMessage(maccommon.MacCommon):
                 else:
                     key_bytes = r.payload
                 r.encrypt(target_algorithm)
-            self.key = SymmetricKey(k=key_bytes, alg=target_algorithm, key_ops=[MacCreateOp])
+            self.key = SymmetricKey(k=key_bytes, optional_params={KpAlg: target_algorithm, KpKeyOps: [MacCreateOp]})
             payload = super(MacMessage, self).compute_tag()
 
         else:
